@@ -25,6 +25,7 @@ import (
   // config stuff
 	"github.com/spf13/viper"
 
+  // store pws
 	"github.com/alexedwards/argon2id"
 )
 
@@ -125,9 +126,8 @@ func main() {
 	// Confirm which config file is used
 	fmt.Printf("Using config: %s\n", viper.ConfigFileUsed())
 
-	port := viper.Get("prod.port") // returns string
-	//port := viper.GetInt("prod.port") // returns integer
-	fmt.Printf("Value: %v, Type: %T\n", port, port)
+	appName := viper.Get("app.name") 
+	fmt.Printf("Value: %v, Type: %T\n", appName, appName)
 
 
 /*
@@ -160,7 +160,6 @@ if err != nil {
 }
 
 For guidance and an outline process for choosing appropriate parameters see https://tools.ietf.org/html/draft-irtf-cfrg-argon2-04#section-4.
-*/
 	// CreateHash returns a Argon2id hash of a plain-text password using the
 	// provided algorithm parameters. The returned hash follows the format used
 	// by the Argon2 reference C implementation and looks like this:
@@ -181,8 +180,9 @@ For guidance and an outline process for choosing appropriate parameters see http
 
 	log.Printf("Match: %v", match)
 
+*/
 
-	// Database
+	// Setup the database
 	database, _ := sql.Open("sqlite3", "./statmeet.db")
 	statement, _ := database.Prepare("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT)")
 	statement.Exec()
@@ -190,10 +190,11 @@ For guidance and an outline process for choosing appropriate parameters see http
 	insert_user.Exec("test", "test")
 	database.Close()
 
-	// Setup Echo
+	// Setup echo
 	e := echo.New()
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	// TODO should session key be moved to viper?
 	e.Use(session.Middleware(sessions.NewCookieStore([]byte(os.Getenv("SESSION_KEY")))))
 
 	// Templates
