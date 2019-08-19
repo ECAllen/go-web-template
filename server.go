@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 
   // web stuff
 	"github.com/dgrijalva/jwt-go"
@@ -26,7 +25,7 @@ import (
 	"github.com/spf13/viper"
 
   // store pws
-	"github.com/alexedwards/argon2id"
+	// "github.com/alexedwards/argon2id"
 )
 
 func accessible(c echo.Context) error {
@@ -50,11 +49,15 @@ func (t *TemplateRegistry) Render(w io.Writer, name string, data interface{}, c 
 		err := errors.New("Template not found -> " + name)
 		return err
 	}
-	return tmpl.ExecuteTemplate(w, "base", data)
+	return tmpl.ExecuteTemplate(w, name, data)
 }
 
 func Index(c echo.Context) error {
-	return c.Render(http.StatusOK, "index", map[string]interface{}{})
+	appName := viper.Get("app.name") 
+	return c.Render(http.StatusOK, "index", map[string]interface{}{
+  	              "app":appName,
+
+  })
 }
 
 func Admin(c echo.Context) error {
@@ -107,11 +110,14 @@ func Login(c echo.Context) error {
 	sess.Save(c.Request(), c.Response())
 
 	if authorized {
-		return c.Render(http.StatusOK, "login", map[string]interface{}{})
+		return c.Render(http.StatusOK, "login", map[string]interface{}{
+  		              "username":username,
+  		              })
 	}
 
 	return c.Render(http.StatusUnauthorized, "unauthorized", map[string]interface{}{})
 }
+
 
 func main() {
 
@@ -126,9 +132,7 @@ func main() {
 	// Confirm which config file is used
 	fmt.Printf("Using config: %s\n", viper.ConfigFileUsed())
 
-	appName := viper.Get("app.name") 
-	fmt.Printf("Value: %v, Type: %T\n", appName, appName)
-
+  sessionKey := viper.Get("security.session_key")
 
 /*
 	Changing the Parameters
@@ -195,12 +199,13 @@ For guidance and an outline process for choosing appropriate parameters see http
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	// TODO should session key be moved to viper?
-	e.Use(session.Middleware(sessions.NewCookieStore([]byte(os.Getenv("SESSION_KEY")))))
+	e.Use(session.Middleware(sessions.NewCookieStore([]byte(sessionKey.(string)))))
 
 	// Templates
 	templates := make(map[string]*template.Template)
 	templates["index"] = template.Must(template.ParseFiles("public/views/index.html", "public/views/loginbar.html", "public/views/base.html"))
 	templates["login"] = template.Must(template.ParseFiles("public/views/login.html", "public/views/loggedinbar.html", "public/views/base.html"))
+	templates["admin"] = template.Must(template.ParseFiles("public/views/admin.html", "public/views/loggedinbar.html", "public/views/base.html"))
 	templates["unauthorized"] = template.Must(template.ParseFiles("public/views/unauthorized.html", "public/views/loginbar.html", "public/views/base.html"))
 
 	e.Renderer = &TemplateRegistry{
