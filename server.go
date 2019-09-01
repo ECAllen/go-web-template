@@ -24,9 +24,39 @@ import (
   // config stuff
 	"github.com/spf13/viper"
 
-  // store pws
+  // st pws
 	// "github.com/alexedwards/argon2id"
 )
+
+
+// Extend the context
+
+
+type AppContext struct {
+ 	echo.Context
+ 	user string
+ }
+ 
+func (c *AppContext) User() {
+ 	println("test")
+ }
+
+/*
+ e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+ 	return func(c echo.Context) error {
+ 		cc := &AppContext{c}
+ 		return next(cc)
+ 	}
+ })
+ 
+ e.GET("/", func(c echo.Context) error {
+ 	cc := c.(*AppContext)
+ 	cc.Foo()
+ 	cc.Bar()
+ 	return cc.String(200, "OK")
+ })
+
+*/
 
 func accessible(c echo.Context) error {
 	return c.String(http.StatusOK, "Accessible")
@@ -49,13 +79,11 @@ func (t *TemplateRegistry) Render(w io.Writer, name string, data interface{}, c 
 		err := errors.New("Template not found -> " + name)
 		return err
 	}
-	return tmpl.ExecuteTemplate(w, name, data)
+	return tmpl.ExecuteTemplate(w, "base", data)
 }
 
 func Index(c echo.Context) error {
-	appName := viper.Get("app.name") 
 	return c.Render(http.StatusOK, "index", map[string]interface{}{
-  	              "app":appName,
 
   })
 }
@@ -63,6 +91,8 @@ func Index(c echo.Context) error {
 func Admin(c echo.Context) error {
 	sess, _ := session.Get("session", c)
 	authorized := sess.Values["auth"]
+	ac := c.(*AppContext)
+ 	ac.User()
 	if authorized == "true" {
 		return c.Render(http.StatusOK, "authorized", map[string]interface{}{})
 	}
@@ -109,6 +139,7 @@ func Login(c echo.Context) error {
 
 	sess.Save(c.Request(), c.Response())
 
+
 	if authorized {
 		return c.Render(http.StatusOK, "login", map[string]interface{}{
   		              "username":username,
@@ -132,7 +163,7 @@ func main() {
 	// Confirm which config file is used
 	fmt.Printf("Using config: %s\n", viper.ConfigFileUsed())
 
-  sessionKey := viper.Get("security.session_key")
+  	sessionKey := viper.Get("security.session_key")
 
 /*
 	Changing the Parameters
@@ -198,7 +229,6 @@ For guidance and an outline process for choosing appropriate parameters see http
 	e := echo.New()
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
-	// TODO should session key be moved to viper?
 	e.Use(session.Middleware(sessions.NewCookieStore([]byte(sessionKey.(string)))))
 
 	// Templates
@@ -215,6 +245,7 @@ For guidance and an outline process for choosing appropriate parameters see http
 	// Routes
 	e.GET("/", Index)
 	e.POST("/login", Login)
+	e.GET("/admin", Admin)
 	e.Logger.Fatal(e.Start(":8000"))
 }
 
