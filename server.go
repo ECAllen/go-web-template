@@ -1,45 +1,59 @@
 package main
 
 import (
-  // general
+	// general
 	"errors"
+	"fmt"
 	"html/template"
 	"io"
 	"log"
 	"net/http"
 
-  // web stuff
+	// web stuff
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/middleware"
 
-  // database stuff
-	"database/sql"
-	"fmt"
-	_ "github.com/mattn/go-sqlite3"
-	"strconv"
-
-  // config stuff
+	// database stuff
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	/*
+		"database/sql"
+		"fmt"
+		_ "github.com/mattn/go-sqlite3"
+		"strconv"
+	*/
+	// config stuff
 	"github.com/spf13/viper"
-
-  // st pws
+	// st pws
 	// "github.com/alexedwards/argon2id"
 )
 
+// Database
+type User struct {
+	gorm.Model
+	Username string `gorm:"unique_index;not null"`
+	Email    string `gorm:"unique_index;not null"`
+	Password string `gorm:"not null"`
+}
+
+func AutoMigrate(db *gorm.DB) {
+	db.AutoMigrate(
+		&User{},
+	)
+}
 
 // Extend the context
-
-
 type AppContext struct {
- 	echo.Context
- 	user string
- }
- 
+	echo.Context
+	user string
+}
+
 func (c *AppContext) User() {
- 	println("test")
- }
+	println("test")
+}
 
 /*
  e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -48,7 +62,6 @@ func (c *AppContext) User() {
  		return next(cc)
  	}
  })
- 
  e.GET("/", func(c echo.Context) error {
  	cc := c.(*AppContext)
  	cc.Foo()
@@ -83,16 +96,14 @@ func (t *TemplateRegistry) Render(w io.Writer, name string, data interface{}, c 
 }
 
 func Index(c echo.Context) error {
-	return c.Render(http.StatusOK, "index", map[string]interface{}{
-
-  })
+	return c.Render(http.StatusOK, "index", map[string]interface{}{})
 }
 
 func Admin(c echo.Context) error {
 	sess, _ := session.Get("session", c)
 	authorized := sess.Values["auth"]
 	ac := c.(*AppContext)
- 	ac.User()
+	ac.User()
 	if authorized == "true" {
 		return c.Render(http.StatusOK, "authorized", map[string]interface{}{})
 	}
@@ -112,43 +123,44 @@ func Login(c echo.Context) error {
 	}
 
 	// Database
-	database, err := sql.Open("sqlite3", "./statmeet.db")
-	if err != nil {
-		log.Fatal(err)
-	}
 
-	rows, err := database.Query("SELECT id, username, password FROM users WHERE username=?", user)
-	if err != nil {
-		log.Fatal(err)
-	}
-	var id int
-	var username string
-	var password string
-	for rows.Next() {
-		rows.Scan(&id, &username, &password)
-		fmt.Println(strconv.Itoa(id) + ": " + username + " " + password)
-	}
-	rows.Close()
-	database.Close()
+	// SQLite
+	/*
+			database, err := sql.Open("sqlite3", "./statmeet.db")
+			if err != nil {
+				log.Fatal(err)
+			}
+		  // TODO defer close
 
+		  rows, err := database.Query("SELECT id, username, password FROM users WHERE username=?", user)
+			if err != nil {
+				log.Fatal(err)
+			}
+			var id int
+			var username string
+			var password string
+			for rows.Next() {
+				rows.Scan(&id, &username, &password)
+				fmt.Println(strconv.Itoa(id) + ": " + username + " " + password)
+			}
+			rows.Close()
+			database.Close()
+	*/
+	username := "test"
 	if username == "test" {
 		authorized = true
 	}
 
 	sess.Values["auth"] = authorized
-
 	sess.Save(c.Request(), c.Response())
-
-
 	if authorized {
 		return c.Render(http.StatusOK, "login", map[string]interface{}{
-  		              "username":username,
-  		              })
+			"username": username,
+		})
 	}
 
 	return c.Render(http.StatusUnauthorized, "unauthorized", map[string]interface{}{})
 }
-
 
 func main() {
 
@@ -163,70 +175,83 @@ func main() {
 	// Confirm which config file is used
 	fmt.Printf("Using config: %s\n", viper.ConfigFileUsed())
 
-  	sessionKey := viper.Get("security.session_key")
+	sessionKey := viper.Get("security.session_key")
 
-/*
-	Changing the Parameters
-
-When creating a hash you can and should configure the parameters to be suitable for the environment that the code is running in. The parameters are:
-
-    Memory — The amount of memory used by the Argon2 algorithm (in kibibytes).
-    Iterations — The number of iterations (or passes) over the memory.
-    Parallelism — The number of threads (or lanes) used by the algorithm.
-    Salt length — Length of the random salt. 16 bytes is recommended for password hashing.
-    Key length — Length of the generated key (or password hash). 16 bytes or more is recommended.
-
-The Memory and Iterations parameters control the computational cost of hashing the password. The higher these figures are, the greater the cost of generating the hash and the longer the runtime. It also follows that the greater the cost will be for any attacker trying to guess the password.
-
-If the code is running on a machine with multiple cores, then you can decrease the runtime without reducing the cost by increasing the Parallelism parameter. This controls the number of threads that the work is spread across. Important note: Changing the value of the Parallelism parameter changes the hash output.
-
-params := &Params{
-	Memory:      128 * 1024,
-	Iterations:  4,
-	Parallelism: 4,
-	SaltLength:  16,
-	KeyLength:   32,
-}
-
-
-hash, err := argon2id.CreateHash("pa$$word", argon2id.DefaultParams)
-if err != nil {
-	log.Fatal(err)
-}
-
-For guidance and an outline process for choosing appropriate parameters see https://tools.ietf.org/html/draft-irtf-cfrg-argon2-04#section-4.
-	// CreateHash returns a Argon2id hash of a plain-text password using the
-	// provided algorithm parameters. The returned hash follows the format used
-	// by the Argon2 reference C implementation and looks like this:
-	// $argon2id$v=19$m=65536,t=3,p=2$c29tZXNhbHQ$RdescudvJCsgt3ub+b+dWRWJTmaaJObG
-	hash, err := argon2id.CreateHash("pa$$word", argon2id.DefaultParams)
+	// Database
+	// Gorm sqlite
+	database, err := gorm.Open("sqlite3", "./statmeet.db")
 	if err != nil {
 		log.Fatal(err)
 	}
+	database.LogMode(true)
+	defer database.Close()
+	database.AutoMigrate(&User{})
+	/*
+	   	Changing the Parameters
 
-	// ComparePasswordAndHash performs a constant-time comparison between a
-	// plain-text password and Argon2id hash, using the parameters and salt
-	// contained in the hash. It returns true if they match, otherwise it returns
-	// false.
-	match, err := argon2id.ComparePasswordAndHash("pa$$word", hash)
-	if err != nil {
-		log.Fatal(err)
-	}
+	   When creating a hash you can and should configure the parameters to be suitable for the environment that the code is running in. The parameters are:
 
-	log.Printf("Match: %v", match)
+	       Memory — The amount of memory used by the Argon2 algorithm (in kibibytes).
+	       Iterations — The number of iterations (or passes) over the memory.
+	       Parallelism — The number of threads (or lanes) used by the algorithm.
+	       Salt length — Length of the random salt. 16 bytes is recommended for password hashing.
+	       Key length — Length of the generated key (or password hash). 16 bytes or more is recommended.
 
-*/
+	   The Memory and Iterations parameters control the computational cost of hashing the password. The higher these figures are, the greater the cost of generating the hash and the longer the runtime. It also follows that the greater the cost will be for any attacker trying to guess the password.
+
+	   If the code is running on a machine with multiple cores, then you can decrease the runtime without reducing the cost by increasing the Parallelism parameter. This controls the number of threads that the work is spread across. Important note: Changing the value of the Parallelism parameter changes the hash output.
+
+	   params := &Params{
+	   	Memory:      128 * 1024,
+	   	Iterations:  4,
+	   	Parallelism: 4,
+	   	SaltLength:  16,
+	   	KeyLength:   32,
+	   }
+
+
+	   hash, err := argon2id.CreateHash("pa$$word", argon2id.DefaultParams)
+	   if err != nil {
+	   	log.Fatal(err)
+	   }
+
+	   For guidance and an outline process for choosing appropriate parameters see https://tools.ietf.org/html/draft-irtf-cfrg-argon2-04#section-4.
+	   	// CreateHash returns a Argon2id hash of a plain-text password using the
+	   	// provided algorithm parameters. The returned hash follows the format used
+	   	// by the Argon2 reference C implementation and looks like this:
+	   	// $argon2id$v=19$m=65536,t=3,p=2$c29tZXNhbHQ$RdescudvJCsgt3ub+b+dWRWJTmaaJObG
+	   	hash, err := argon2id.CreateHash("pa$$word", argon2id.DefaultParams)
+	   	if err != nil {
+	   		log.Fatal(err)
+	   	}
+
+	   	// ComparePasswordAndHash performs a constant-time comparison between a
+	   	// plain-text password and Argon2id hash, using the parameters and salt
+	   	// contained in the hash. It returns true if they match, otherwise it returns
+	   	// false.
+	   	match, err := argon2id.ComparePasswordAndHash("pa$$word", hash)
+	   	if err != nil {
+	   		log.Fatal(err)
+	   	}
+
+	   	log.Printf("Match: %v", match)
+
+	*/
 
 	// Setup the database
-	database, _ := sql.Open("sqlite3", "./statmeet.db")
-	statement, _ := database.Prepare("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT)")
-	statement.Exec()
-	insert_user, _ := database.Prepare("INSERT INTO users (username, password) VALUES (?, ?)")
-	insert_user.Exec("test", "test")
-	database.Close()
+	/*
+		database, _ := sql.Open("sqlite3", "./statmeet.db")
+		defer database.Close()
+		statement, _ := database.Prepare("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT)")
+		statement.Exec()
+		insert_user, _ := database.Prepare("INSERT INTO users (username, password) VALUES (?, ?)")
+		insert_user.Exec("test", "test")
+	*/
 
 	// Setup echo
 	e := echo.New()
+	e.Logger.SetLevel(log.DEBUG)
+	e.Pre(middleware.RemoveTrailingSlash())
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(session.Middleware(sessions.NewCookieStore([]byte(sessionKey.(string)))))
