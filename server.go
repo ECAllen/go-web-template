@@ -201,7 +201,6 @@ func main() {
 	database.LogMode(true)
 	defer database.Close()
 	database.AutoMigrate(&User{})
-
 	us := NewUserStore(database)
 
 
