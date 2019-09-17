@@ -1,5 +1,10 @@
 package main
 
+/* Notes
+
+Add License
+
+*/
 import (
 	// general
 	"errors"
@@ -43,6 +48,16 @@ func AutoMigrate(db *gorm.DB) {
 	db.AutoMigrate(
 		&User{},
 	)
+}
+
+type UserStore struct {
+    db *gorm.DB
+}
+
+func NewUserStore(db *gorm.DB) *UserStore {
+    return &UserStore{
+        db: db,
+    }
 }
 
 // Extend the context
@@ -186,6 +201,10 @@ func main() {
 	database.LogMode(true)
 	defer database.Close()
 	database.AutoMigrate(&User{})
+
+	us := NewUserStore(database)
+
+
 	/*
 	   	Changing the Parameters
 
@@ -250,10 +269,11 @@ func main() {
 
 	// Setup echo
 	e := echo.New()
-	e.Logger.SetLevel(log.DEBUG)
+	// e.Logger.SetLevel(log.DEBUG)
 	e.Pre(middleware.RemoveTrailingSlash())
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	e.Use(middleware.Secure())
 	e.Use(session.Middleware(sessions.NewCookieStore([]byte(sessionKey.(string)))))
 
 	// Templates
