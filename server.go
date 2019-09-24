@@ -4,6 +4,13 @@ package main
 
 Add License
 
+DO NOT USE yet, Shit code needs serious cleaning
+
+Try to keep it one page if possible
+
+TODO 
+add go mod
+check default servemux
 */
 import (
 	// general
@@ -13,12 +20,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	// web stuff
 	"github.com/dgrijalva/jwt-go"
-	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
-	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/middleware"
 
 	// database stuff
@@ -32,8 +38,8 @@ import (
 	*/
 	// config stuff
 	"github.com/spf13/viper"
-	// st pws
-	// "github.com/alexedwards/argon2id"
+	// pws
+	"github.com/alexedwards/argon2id"
 )
 
 // Database
@@ -60,43 +66,7 @@ func NewUserStore(db *gorm.DB) *UserStore {
     }
 }
 
-// Extend the context
-type AppContext struct {
-	echo.Context
-	user string
-}
-
-func (c *AppContext) User() {
-	println("test")
-}
-
-/*
- e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
- 	return func(c echo.Context) error {
- 		cc := &AppContext{c}
- 		return next(cc)
- 	}
- })
- e.GET("/", func(c echo.Context) error {
- 	cc := c.(*AppContext)
- 	cc.Foo()
- 	cc.Bar()
- 	return cc.String(200, "OK")
- })
-
-*/
-
-func accessible(c echo.Context) error {
-	return c.String(http.StatusOK, "Accessible")
-}
-
-func restricted(c echo.Context) error {
-	user := c.Get("user").(*jwt.Token)
-	claims := user.Claims.(jwt.MapClaims)
-	name := claims["name"].(string)
-	return c.String(http.StatusOK, "Welcome "+name+"!")
-}
-
+// Templates
 type TemplateRegistry struct {
 	templates map[string]*template.Template
 }
@@ -110,32 +80,33 @@ func (t *TemplateRegistry) Render(w io.Writer, name string, data interface{}, c 
 	return tmpl.ExecuteTemplate(w, "base", data)
 }
 
+func restricted(c echo.Context) error {
+	user := c.Get("user").(*jwt.Token)
+	claims := user.Claims.(jwt.MapClaims)
+	name := claims["name"].(string)
+	return c.String(http.StatusOK, "Welcome "+name+"!")
+}
+
 func Index(c echo.Context) error {
 	return c.Render(http.StatusOK, "index", map[string]interface{}{})
 }
 
 func Admin(c echo.Context) error {
-	sess, _ := session.Get("session", c)
-	authorized := sess.Values["auth"]
-	ac := c.(*AppContext)
-	ac.User()
-	if authorized == "true" {
+	user := c.Get("user").(*jwt.Token)
+	claims := user.Claims.(jwt.MapClaims)
+	admin := claims["admin"].(bool)
+	if admin {
 		return c.Render(http.StatusOK, "authorized", map[string]interface{}{})
 	}
 	return c.Render(http.StatusUnauthorized, "unauthorized", map[string]interface{}{})
 }
 
+func Create(c echo.Context) error {
+	return c.Render(http.StatusOK, "create", map[string]interface{}{})
+}
+
+
 func Login(c echo.Context) error {
-
-	user := c.FormValue("username")
-	authorized := false
-
-	sess, _ := session.Get("session", c)
-	sess.Options = &sessions.Options{
-		Path:     "/",
-		MaxAge:   86400 * 7,
-		HttpOnly: true,
-	}
 
 	// Database
 
@@ -161,21 +132,40 @@ func Login(c echo.Context) error {
 			rows.Close()
 			database.Close()
 	*/
-	username := "test"
-	if username == "test" {
-		authorized = true
+	// user := c.FormValue("username")
+	pw := c.FormValue("password")
+
+	// TODO get hash from db after create cycle is coded up
+	hash := "blah"
+
+	match, err := argon2id.ComparePasswordAndHash(pw, hash)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	sess.Values["auth"] = authorized
-	sess.Save(c.Request(), c.Response())
-	if authorized {
-		return c.Render(http.StatusOK, "login", map[string]interface{}{
-			"username": username,
-		})
+	if !match {
+		return c.Render(http.StatusUnauthorized, "unauthorized", map[string]interface{}{})
 	}
 
-	return c.Render(http.StatusUnauthorized, "unauthorized", map[string]interface{}{})
+	token := jwt.New(jwt.SigningMethodHS256)
+
+	claims  := token.Claims.(jwt.MapClaims)
+	claims["name"] = "Ron Paul"
+	claims["admin"] = true
+	claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
+
+	t, err := token.SignedString([]byte("liberty"))
+	if err != nil {
+		return err
+	}
+
+	return c.Render(http.StatusOK, "authorized", map[string]interface{}{
+		"token": t,})
+
 }
+
+//Globals
+var session_key string 
 
 func main() {
 
@@ -190,8 +180,6 @@ func main() {
 	// Confirm which config file is used
 	fmt.Printf("Using config: %s\n", viper.ConfigFileUsed())
 
-	sessionKey := viper.Get("security.session_key")
-
 	// Database
 	// Gorm sqlite
 	database, err := gorm.Open("sqlite3", "./statmeet.db")
@@ -201,8 +189,7 @@ func main() {
 	database.LogMode(true)
 	defer database.Close()
 	database.AutoMigrate(&User{})
-	us := NewUserStore(database)
-
+	// us := NewUserStore(database)
 
 	/*
 	   	Changing the Parameters
@@ -256,30 +243,19 @@ func main() {
 
 	*/
 
-	// Setup the database
-	/*
-		database, _ := sql.Open("sqlite3", "./statmeet.db")
-		defer database.Close()
-		statement, _ := database.Prepare("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT)")
-		statement.Exec()
-		insert_user, _ := database.Prepare("INSERT INTO users (username, password) VALUES (?, ?)")
-		insert_user.Exec("test", "test")
-	*/
-
 	// Setup echo
 	e := echo.New()
-	// e.Logger.SetLevel(log.DEBUG)
 	e.Pre(middleware.RemoveTrailingSlash())
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(middleware.Secure())
-	e.Use(session.Middleware(sessions.NewCookieStore([]byte(sessionKey.(string)))))
 
 	// Templates
 	templates := make(map[string]*template.Template)
 	templates["index"] = template.Must(template.ParseFiles("public/views/index.html", "public/views/loginbar.html", "public/views/base.html"))
 	templates["login"] = template.Must(template.ParseFiles("public/views/login.html", "public/views/loggedinbar.html", "public/views/base.html"))
 	templates["admin"] = template.Must(template.ParseFiles("public/views/admin.html", "public/views/loggedinbar.html", "public/views/base.html"))
+	templates["create"] = template.Must(template.ParseFiles("public/views/create.html", "public/views/base.html"))
 	templates["unauthorized"] = template.Must(template.ParseFiles("public/views/unauthorized.html", "public/views/loginbar.html", "public/views/base.html"))
 
 	e.Renderer = &TemplateRegistry{
@@ -289,7 +265,13 @@ func main() {
 	// Routes
 	e.GET("/", Index)
 	e.POST("/login", Login)
-	e.GET("/admin", Admin)
+	e.POST("/create", Create)
+
+	admin := e.Group("/admin")
+	admin.Use(middleware.JWT([]byte(session_key)))
+	admin.GET("/", Admin)
+
+	// Let 'er rip...
 	e.Logger.Fatal(e.Start(":8000"))
 }
 
