@@ -6,14 +6,14 @@ Add License
 
 DO NOT USE yet, Shit code needs serious cleaning
 
-Try to keep it one page if possible
-
 TODO 
-add go mod
-check default servemux
+
+add proper logging to the server
+
 */
 import (
 	// general
+	"os"
 	"errors"
 	"fmt"
 	"html/template"
@@ -41,6 +41,12 @@ import (
 	// pws
 	"github.com/alexedwards/argon2id"
 )
+
+// Dependency injection
+type application struct {
+	errorLog *log.Logger
+	infoLog  *log.Logger
+}
 
 // Database
 type User struct {
@@ -105,11 +111,7 @@ func Create(c echo.Context) error {
 	return c.Render(http.StatusOK, "create", map[string]interface{}{})
 }
 
-
 func Login(c echo.Context) error {
-
-	// Database
-
 	// SQLite
 	/*
 			database, err := sql.Open("sqlite3", "./statmeet.db")
@@ -164,10 +166,16 @@ func Login(c echo.Context) error {
 
 }
 
-//Globals
-var session_key string 
-
 func main() {
+
+	// Logging
+	infoLog := log.New(os.Stdout, "INFO\t", log.Ldate|log.Ltime)
+	errorLog := log.New(os.Stderr, "ERROR\t", log.Ldate|log.Ltime)
+
+	app := &application{
+		errorLog: errorLog,
+		infoLog: infoLog,
+	}
 
 	// Load Configs
 	viper.AddConfigPath("./configs")
@@ -176,6 +184,7 @@ func main() {
 	if err := viper.ReadInConfig(); err != nil {
 		log.Fatalf("Error reading config file, %s", err)
 	}
+	session_key := viper.GetString("session_key")
 
 	// Confirm which config file is used
 	fmt.Printf("Using config: %s\n", viper.ConfigFileUsed())
