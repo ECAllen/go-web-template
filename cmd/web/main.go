@@ -8,8 +8,6 @@ DO NOT USE yet, Shit code needs serious cleaning
 
 TODO 
 
-add proper logging to the server
-
 */
 import (
 	// general
@@ -42,20 +40,22 @@ import (
 	"github.com/alexedwards/argon2id"
 )
 
+// Types
 // Dependency injection
 type application struct {
 	errorLog *log.Logger
 	infoLog  *log.Logger
+	users	 *UserStore
+}
+
+type User struct {
+        gorm.Model
+        Username string `gorm:"unique_index;not null"`
+        Email    string `gorm:"unique_index;not null"`
+        Password string `gorm:"not null"`
 }
 
 // Database
-type User struct {
-	gorm.Model
-	Username string `gorm:"unique_index;not null"`
-	Email    string `gorm:"unique_index;not null"`
-	Password string `gorm:"not null"`
-}
-
 func AutoMigrate(db *gorm.DB) {
 	db.AutoMigrate(
 		&User{},
@@ -111,7 +111,7 @@ func Create(c echo.Context) error {
 	return c.Render(http.StatusOK, "create", map[string]interface{}{})
 }
 
-func Login(c echo.Context) error {
+func (app *application) Login(c echo.Context) error {
 	// SQLite
 	/*
 			database, err := sql.Open("sqlite3", "./statmeet.db")
@@ -172,10 +172,6 @@ func main() {
 	infoLog := log.New(os.Stdout, "INFO\t", log.Ldate|log.Ltime)
 	errorLog := log.New(os.Stderr, "ERROR\t", log.Ldate|log.Ltime)
 
-	app := &application{
-		errorLog: errorLog,
-		infoLog: infoLog,
-	}
 
 	// Load Configs
 	viper.AddConfigPath("./configs")
@@ -198,9 +194,16 @@ func main() {
 	database.LogMode(true)
 	defer database.Close()
 	database.AutoMigrate(&User{})
-	// us := NewUserStore(database)
 
+	userStore := NewUserStore(database)
+
+	app := &application{
+		errorLog: errorLog,
+		infoLog: infoLog,
+		users: userStore,
+	}
 	/*
+
 	   	Changing the Parameters
 
 	   When creating a hash you can and should configure the parameters to be suitable for the environment that the code is running in. The parameters are:
